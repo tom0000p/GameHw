@@ -1,0 +1,302 @@
+
+<!doctype html>
+<html lang="en">
+<head>
+	<title>Agent</title>
+	<meta charset="utf-8">
+ <style>
+	body {
+		background-color: #fff;
+		color: #111;
+		margin: 0px;
+		overflow: hidden;
+		font-family: Monospace;
+		font-size: 20px;
+		position: absolute;
+	}
+	#info {
+		position: absolute;
+		top: 0px; width: 100%;
+		
+		padding: 5px;
+		text-align: center;
+		color: #ffff00
+	}
+	strong {color:red}
+</style>
+</head>
+
+
+<body>
+
+<!-- <div id="container" style="position: absolute; left:0px; top:0px"></div>
+ -->
+
+ <div id="container"></div>
+
+<script src="http://jyunming-chen.github.io/tutsplus/js/r69/three.js"></script>
+<script src="https://dl.dropboxusercontent.com/u/3587259/Code/Threejs/OrbitControls.js"></script>
+<script src="https://jyunming-chen.github.io/tutsplus/js/KeyboardState.js"></script>
+<script src="http://jyunming-chen.github.io/tutsplus/agent.js"></script>
+<!-- ------------------------------------------------------------ -->
+
+<script>
+
+// standard global variables
+var container, scene, camera, renderer, controls;
+var clock = new THREE.Clock();
+var mesh;
+
+init();
+animate();
+
+// agent stuff
+var ob, agent, ob2, ob3, agent2, agent3;
+
+// picking
+var mouse = new THREE.Vector2(), plane;
+var tracer = new THREE.Vector3();
+
+
+
+
+
+// FUNCTIONS 		
+function init() 
+{
+	
+	
+	// SCENE
+	scene = new THREE.Scene();
+
+	// CAMERA
+	var SCREEN_WIDTH = window.innerWidth, SCREEN_HEIGHT = window.innerHeight;
+	var VIEW_ANGLE = 45, ASPECT = SCREEN_WIDTH / SCREEN_HEIGHT, NEAR = 0.1, FAR = 20000;
+	camera = new THREE.PerspectiveCamera( VIEW_ANGLE, ASPECT, NEAR, FAR);
+	scene.add(camera);
+	camera.position.set(0,150,400);
+	camera.lookAt(scene.position);	
+	var maxNum = 100;  
+	var minNum = -100;  
+	var n1 = Math.floor(Math.random() * (maxNum - minNum + 1)) + minNum;
+	var m1 = Math.floor(Math.random() * (maxNum - minNum + 1)) + minNum;
+	var n2 = Math.floor(Math.random() * (maxNum - minNum + 1)) + minNum;
+	var m2 = Math.floor(Math.random() * (maxNum - minNum + 1)) + minNum;
+	var n3 = Math.floor(Math.random() * (maxNum - minNum + 1)) + minNum;
+	var m3 = Math.floor(Math.random() * (maxNum - minNum + 1)) + minNum;
+
+	ob = new Obstacle (new THREE.Vector3 (20,0,40),20);
+	scene.add (ob.mesh);
+	
+	ob2 = new Obstacle (new THREE.Vector3 (-50,0,30),30);
+	scene.add (ob2.mesh);
+	
+	ob3 = new Obstacle (new THREE.Vector3 (20,0,-50),40);
+	scene.add (ob3.mesh);
+	
+	agent = new Agent (new THREE.Vector3 (n1,0,m1), 
+			new THREE.Vector3(50,0,-50));
+	scene.add (agent.mesh);
+	
+	agent2 = new Agent (new THREE.Vector3 (n2,0,m2), 
+			new THREE.Vector3(50,0,-50));
+	scene.add (agent2.mesh);
+	
+	//agent2.mesh.position.x = 100;
+	
+	agent3 = new Agent (new THREE.Vector3 (n3,0,m3), 
+			new THREE.Vector3(50,0,-50));
+	scene.add (agent3.mesh);
+	
+	//agent3.mesh.position.z = 100;
+	
+	mesh = new THREE.Mesh (new THREE.CylinderGeometry (5,5,2,10), new THREE.MeshNormalMaterial());
+	scene.add (mesh);
+	
+	renderer = new THREE.WebGLRenderer( {antialias:true} );
+	renderer.setSize(SCREEN_WIDTH, SCREEN_HEIGHT);
+	renderer.setClearColor (0x888888);
+	
+	container = document.getElementById( 'container' );
+	container.appendChild( renderer.domElement );
+
+	// CONTROLS
+	controls = new THREE.OrbitControls( camera, renderer.domElement );
+
+	var gridXZ = new THREE.GridHelper(100, 10);
+	gridXZ.setColors( new THREE.Color(0xff0000), new THREE.Color(0xffffff) );
+	scene.add(gridXZ);
+
+	// for picking
+	plane = new THREE.Mesh(
+		new THREE.PlaneBufferGeometry( 200, 200, 8, 8 ),
+		new THREE.MeshBasicMaterial( { color: 0xff0000, opacity: 0.25, transparent: true } )
+	);
+	plane.rotation.x = -Math.PI/2;
+	plane.visible = false;   // invisible, for picking only
+	scene.add( plane );
+
+	// LIGHT
+	var light = new THREE.PointLight(0xffffff);
+	light.position.set(0,250,0);
+	scene.add(light);
+
+	window.addEventListener ('resize', onWindowResize, false);	
+	window.addEventListener( 'mousedown', onDocumentMouseMove, false );
+}
+
+function onWindowResize()
+{
+	camera.aspect = window.innerWidth / window.innerHeight;
+	camera.updateProjectionMatrix();
+	renderer.setSize (window.innerWidth, window.innerHeight);
+}
+
+
+Agent.prototype.accumForce = function ()
+{
+	// clear force accumulator
+	this.force.set (0,0,0);
+	
+	var sum = new THREE.Vector3(0,0,0);
+	
+	// seek
+	var tmp = new THREE.Vector3();
+	tmp.subVectors (this.target, this.pos);
+	tmp.normalize().multiplyScalar (MAXSPEED);
+	sum.subVectors (tmp, this.vel);
+
+	// collision
+	
+	////////////////////////////////////////
+		var vhat = this.vel.clone().normalize();
+	tmp.subVectors (ob.center, this.pos); // c-p
+	var tll = tmp.dot(vhat);
+
+	if (tll > 0 && tll < REACH) {
+		vhat.multiplyScalar (tll);
+		var tperp = new THREE.Vector3();
+		tperp.subVectors (tmp, vhat);
+		if (tperp.length() < ob.size+this.size) {
+			tperp.negate();
+			sum.add (tperp);
+			console.log ("hit", tperp);
+		}
+	}
+	
+	/////////////////////////////
+		var vhat2 = this.vel.clone().normalize();
+	tmp.subVectors (ob2.center, this.pos); // c-p
+	var tll2= tmp.dot(vhat2);
+
+	if (tll2 > 0 && tll2 < REACH) {
+		vhat2.multiplyScalar (tll2);
+		var tperp2 = new THREE.Vector3();
+		tperp2.subVectors (tmp, vhat2);
+		if (tperp2.length() < ob2.size+this.size) {
+			tperp2.negate();
+			sum.add (tperp2);
+			console.log ("hit", tperp2);
+		}
+	}
+	
+	
+	//////////////////////
+	var vhat3 = this.vel.clone().normalize();
+	tmp.subVectors (ob3.center, this.pos); // c-p
+	var tll3 = tmp.dot(vhat3);
+
+	if (tll3 > 0 && tll3 < REACH) {
+		vhat3.multiplyScalar (tll3);
+		var tperp3 = new THREE.Vector3();
+		tperp3.subVectors (tmp, vhat3);
+		if (tperp3.length() < ob3.size+this.size) {
+			tperp3.negate();
+			sum.add (tperp3);
+			console.log ("hit", tperp3);
+		}
+	}
+	////////////////
+	
+	this.force.copy (sum);
+}
+
+function animate() 
+{
+	var asubb = new THREE.Vector3();
+	var asubc = new THREE.Vector3();
+	var csubb = new THREE.Vector3();
+	asubb.subVectors (agent.pos, agent2.pos);
+	asubc.subVectors (agent.pos, agent3.pos);
+	csubb.subVectors (agent3.pos, agent2.pos);
+	
+	var dt = clock.getDelta();
+ 	 agent.step (dt);
+	 agent2.step (dt);
+	 agent3.step (dt);
+	 ////////////////////////Separation
+/*	 
+if(Math.abs (Math.sqrt(asubb.x*asubb.x + asubb.z*asubb.z) ) <5 )
+{
+	agent.vel.x = agent.vel.x * 0.5;
+	agent.vel.z = agent.vel.z * 0.5;
+	agent2.vel.x = agent2.vel.x * 1.05;
+	agent2.vel.z = agent2.vel.z * 1.05;
+}
+
+if(Math.abs (Math.sqrt(asubc.x*asubc.x + asubc.z*asubc.z) ) <5)
+{
+	agent2.vel.x = agent2.vel.x * 0.5;
+	agent2.vel.z = agent2.vel.z * 0.5;
+	agent3.vel.x = agent3.vel.x * 1.05;
+	agent3.vel.z = agent3.vel.z * 1.05;
+}
+
+else if(Math.abs (Math.sqrt(csubb.x*csubb.x + csubb.z*csubb.z) ) <5)
+{
+	agent.vel.x = agent.vel.x * 1.05;
+	agent.vel.z = agent.vel.z * 1.05;
+	agent3.vel.x = agent3.vel.x * 0.5;
+	agent3.vel.z = agent3.vel.z * 0.5;
+}
+*/
+	agent.mesh.position.copy (agent.pos);
+	agent2.mesh.position.copy (agent2.pos);
+	agent3.mesh.position.copy (agent3.pos);
+	
+	requestAnimationFrame( animate );
+	render();		
+	update();
+}
+
+function onDocumentMouseMove( event ) {
+	event.preventDefault();
+	mouse.x = ( event.clientX / window.innerWidth ) * 2 - 1;
+	mouse.y = - ( event.clientY / window.innerHeight ) * 2 + 1;
+	
+	var vector = new THREE.Vector3( mouse.x, mouse.y, 0.5 ).unproject( camera );
+	var raycaster = new THREE.Raycaster( camera.position, vector.sub( camera.position ).normalize() );
+
+	var intersects = raycaster.intersectObject( plane );
+	if (intersects.length > 0) {
+		var move = intersects[0].point.clone();
+		tracer.copy (move);
+		agent.target.copy (move);
+		agent2.target.copy (move);
+		agent3.target.copy (move);
+		mesh.position.copy(move);
+	}
+}
+function update()
+{
+	controls.update();
+}
+
+function render() 
+{
+	renderer.render( scene, camera );
+}
+</script>
+
+</body>
+</html>
