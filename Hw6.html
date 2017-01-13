@@ -1,0 +1,434 @@
+<html>
+<head>
+	<title>ThrowBall</title>
+	<meta charset="utf-8">
+ <style>
+	body {
+	  background-color: #fff;
+	  color: #111;
+	  margin: 0px;
+	  overflow: hidden;
+	  font-family: Monospace;
+	  font-size: 20px;
+	}
+	
+	#info {
+	  position: absolute;
+	  top: 0px;
+	  width: 100%;
+	  padding: 5px;
+	  text-align: center;
+	  color: #ffff00
+	}
+	
+	a {
+	  color: #00ffff
+	}
+	
+	strong {
+	  color: red
+	}
+	
+	#container {
+	  z-index: 0;
+	  left: 0px;
+	  top: 0px;
+	  overflow: hidden;
+	  position: absolute;
+	  width: 100%;
+	  height: 100%;
+	}
+  
+  #gui {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    height: 350px;
+}
+
+</style>
+</head>
+
+
+<body>
+
+<!-- <div id="container" style="position: absolute; left:0px; top:0px"></div>
+ -->
+
+<div id="info">
+  Hw6
+  <br>
+  <button id="throw" style="width:20%">Throw</button>
+  <button id="restart" style="width:20%">restart</button>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r70/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dat-gui/0.5/dat.gui.min.js"></script>
+<script src="https://dl.dropboxusercontent.com/u/3587259/Code/Threejs/OrbitControls.js"></script>
+<script src="https://rawgit.com/jyunming-chen/game3js/master/js/ccdbox.js"></script>
+<script src="https://code.jquery.com/jquery-2.1.4.min.js"></script>
+
+<!-- ------------------------------------------------------------ -->
+
+<script>
+  /*
+  function click() {
+if (event.button==2) {
+alert('禁止使用右鍵')
+}
+}document.onmousedown=click
+
+*/
+var scene, renderer, camera;
+var controls;
+var lowerArm, upperArm;
+
+var clock = new THREE.Clock();
+var ball, ballP, ballV, ballF;
+
+var ts;
+var lastPos = new THREE.Vector3();
+var pos;
+var point = [];
+/*
+var keys = [
+  [0, [-40, 55, -10]],
+  [1, [-40, 55, 100]]
+];
+*/
+var keys = [
+  [0, [, , ]],
+  [1, [, , ]]
+];
+var T = .52;
+var flag = 0
+var i = 0;
+$("#throw").click(function() {
+  ts = clock.getElapsedTime();
+  tsphere.material.visible = true;
+	update.release = false;
+  flag = 1;
+});
+
+$("#restart").click(function() {
+			window.location.reload();
+});
+
+
+var circle;
+var gcontrols;
+var theta1 = 0,
+  theta2 = 0,
+  theta3 = 0, theta4 = 0;
+var tsphere;
+var target;
+
+var axes = [];
+var joints = [];
+
+init();
+animate();
+
+////////////////////////////////////////////////////////
+// forward kinematics
+function fk(q, joints) {
+  // joint[0]: shoulder
+  // joint[1]: elbow
+  // joint[2]: hand
+  //	joints[0] = new THREE.Vector3(0,0,0);
+  var m = new THREE.Matrix4();
+
+  // from home plate
+  var localzero = new THREE.Vector3(0, 0, 0);
+  m.makeTranslation(0, 0, -15);
+  //m.multiply(new THREE.Matrix4().makeRotationY(torsoTurn));
+  m.multiply(new THREE.Matrix4().makeTranslation(-25, 100, 0));
+  localzero.applyMatrix4(m);
+  joints[0].copy(localzero);
+
+  m.multiply(new THREE.Matrix4().makeRotationZ(q[0])); // 'ZXY'
+  m.multiply(new THREE.Matrix4().makeRotationX(q[1]));
+  m.multiply(new THREE.Matrix4().makeRotationY(q[2]));
+  m.multiply(new THREE.Matrix4().makeTranslation(0, -40, 0));
+  localzero.set(0, 0, 0);
+  localzero.applyMatrix4(m);
+  joints[1].copy(localzero);
+
+  m.multiply(new THREE.Matrix4().makeRotationX(q[3]));
+  m.multiply(new THREE.Matrix4().makeTranslation(0, -40, 0));
+  localzero.set(0, 0, 0);
+  localzero.applyMatrix4(m);
+  joints[2].copy(localzero);
+}
+
+/////////////////////////////////////////////////////////////
+// joint axis setup
+//
+function setarm() {
+  var axis = new CCD_axis(new THREE.Vector3(0, 0, 1), 0);
+  axis.limits = new THREE.Vector2(-6, 0);
+  axes.push(axis);
+  var axis = new CCD_axis(new THREE.Vector3(1, 0, 0), 0);
+  axis.limits = new THREE.Vector2(-2.5, 2.5);
+  axes.push(axis);
+  var axis = new CCD_axis(new THREE.Vector3(0, 1, 0), 0);
+  axis.limits = new THREE.Vector2(.3, .30); //,2.5); 
+  axes.push(axis);
+  var axis = new CCD_axis(new THREE.Vector3(1, 0, 0), 1);
+  axis.limits = new THREE.Vector2(-2.7, -0.01);
+  axes.push(axis);
+}
+
+////////////////////////////////////////////////////////////////
+
+
+function init() {
+
+  var width = window.innerWidth;
+  var height = window.innerHeight;
+
+  renderer = new THREE.WebGLRenderer({
+    antialias: true
+  });
+  renderer.setSize(width, height);
+  renderer.setClearColor(0x888888);
+
+  document.body.appendChild(renderer.domElement);
+
+  scene = new THREE.Scene();
+
+  camera = new THREE.PerspectiveCamera(40, width / height, 0.1, 10000);
+  camera.position.y = 160;
+  camera.position.z = 400;
+  camera.lookAt(new THREE.Vector3(0, 0, 0));
+  scene.add(camera);
+
+  controls = new THREE.OrbitControls(camera, renderer.domElement);
+
+  body = new THREE.Object3D();
+  var boxGeometry = new THREE.BoxGeometry(50, 100, 30);
+  var bodyMesh = new THREE.Mesh(boxGeometry, new THREE.MeshNormalMaterial());
+  bodyMesh.position.set(0, 50, 0);
+  body.add(bodyMesh);
+  scene.add(body);
+  body.position.set(0, 0, -15);
+
+  var boxGeometry = new THREE.BoxGeometry(10, 40, 10);
+  var arm = new THREE.Mesh(boxGeometry, new THREE.MeshNormalMaterial());
+  upperArm = new THREE.Object3D();
+  upperArm.add(arm);
+  arm.position.set(-5, -20, 0);
+  body.add(upperArm);
+  upperArm.position.set(-25, 100, 0);
+
+  boxGeometry = new THREE.BoxGeometry(10, 40, 10);
+  arm2 = new THREE.Mesh(boxGeometry, new THREE.MeshNormalMaterial());
+  lowerArm = new THREE.Object3D();
+  lowerArm.position.set(0, -40, 0);
+  upperArm.add(lowerArm);
+  lowerArm.add(arm2);
+  arm2.position.set(-5, -20, 0);
+
+  var gridXZ = new THREE.GridHelper(100, 10);
+  gridXZ.setColors(new THREE.Color(0xff0000), new THREE.Color(0xffffff));
+  scene.add(gridXZ);
+	
+  tsphere = new THREE.Mesh(new THREE.BoxGeometry(7, 7, 7), new THREE.MeshBasicMaterial({
+    wireframe: true
+  }));
+  scene.add(tsphere);
+	
+  window.addEventListener('resize', onWindowResize, false);
+
+  /////////////////////////////////////////
+  target = new THREE.Vector3();
+  target.set(-40, 55, -10);
+  setarm();
+  for (var i = 0; i < 3; i++)
+    joints[i] = new THREE.Vector3();
+
+
+  ball = new THREE.Mesh(new THREE.SphereGeometry(7), new THREE.MeshNormalMaterial({
+    wireframe: true
+  }));
+  scene.add(ball);
+  ballP = new THREE.Vector3();
+  ballV = new THREE.Vector3();
+  ballF = new THREE.Vector3(0, -120, 0);
+  ///////////////////////////////////////////////////////
+  
+    gcontrol = {
+    LeftorRight: -40,
+    UporDown: 55,
+  };
+
+  var gui = new dat.GUI();
+  gui.domElement.id = 'gui';
+
+  gui.add(gcontrol, "LeftorRight", -85, -20);
+  gui.add(gcontrol, "UporDown", 45, 150);
+  ////////////////////////////////////////////////////////////
+  //var point1 = new THREE.Mesh(new THREE.SphereGeometry(1), new THREE.MeshNormalMaterial({
+    //wireframe: true
+  //}));
+  /*
+  var point2 = point1.clone();
+  var point3 = point1.clone();
+  var point4 = point1.clone();
+  var point5 = point1.clone();
+  var point6 = point1.clone();
+  var point7 = point1.clone();
+  var point8 = point1.clone();
+  var point9 = point1.clone();
+  var point10 = point1.clone();
+  
+  for(var j = 0; j< 10; j++)
+  {
+  	point[j] =  point1.clone();
+    scene.add(point[j]);
+    }
+  
+    //scene.add(point1);
+    scene.add(point2);
+    scene.add(point3);
+    scene.add(point4);
+    scene.add(point5);
+    scene.add(point6);
+    scene.add(point7);
+    scene.add(point8);
+    scene.add(point9);
+    scene.add(point10);
+    */
+    var material = new THREE.MeshBasicMaterial({
+                color: 0xffff00,
+                wireframe: true
+           });
+    var circle = new THREE.Mesh(new THREE.TorusGeometry(30, 1, 120, 18), material);
+    scene.add(circle);
+    var circle2 = circle.clone();
+    scene.add(circle2);
+    circle.position.x = -40;
+    circle.position.y = 140;
+    circle.position.z = 280;
+    
+    circle2.position.x = -20;
+    circle2.position.y = 140;
+    circle2.position.z = 200;
+    //////////////////////////////////////////////////////
+
+}
+
+function animate() {
+	tsphere.position.x = gcontrol.LeftorRight;
+  tsphere.position.y = gcontrol.UporDown;
+  target.set(tsphere.position.x, tsphere.position.y, 0);
+  if(gcontrol.UporDown > 100 && gcontrol.LeftorRight < -30)
+  	gcontrol.LeftorRight = -30;
+    	keys[0][1][0] = tsphere.position.x;
+    	keys[0][1][1] = tsphere.position.y;
+    	keys[0][1][2] = tsphere.position.z;
+    	keys[1][1][0] = tsphere.position.x;
+    	keys[1][1][1] = tsphere.position.y + (170 - tsphere.position.y)*0.5;
+   	 	keys[1][1][2] = tsphere.position.z + 10 ;
+   //point.position.copy(pos[0]);
+   //point2.position.copy(pos[1]);
+    //point3.position.copy(pos[2]);
+	//point[i].position.x = tsphere.position.x;
+  /*
+  for(var j = 0; j < 10; j++)
+  	point[j].position.copy(tsphere.position);
+  */
+  requestAnimationFrame(animate);
+  //controls.update();
+  var dt = clock.getDelta();
+  update(dt);
+  render();
+}
+
+function linearTween(s, b, e) {
+  var pos = [];
+  for (var i = 0; i < 3; i++) {
+    pos.push((1 - s) * b[i] + s * e[i]);
+  }
+  return pos;
+}
+
+function keyframeInterpolate(t) {
+
+  if (ts === undefined)
+    return;
+
+  var s = (t - ts) / T;
+  if (s > 1) { // return end frame
+    target.set(keys[1][1][0], keys[1][1][1], keys[1][1][2])
+  } else {
+    pos = linearTween(s, keys[0][1], keys[1][1]);
+    target.set(pos[0], pos[1], pos[2]);
+  }
+}
+
+function update(dt) {
+
+  update.release = update.release === undefined ? false : update.release;
+
+  keyframeInterpolate(clock.getElapsedTime());
+  tsphere.position.copy(target);
+  ball.position.copy(tsphere.position);
+
+	//	var theta = [theta1, theta2, theta3, theta4];
+  var theta = [0, 0, 0, -1e-2];
+
+  ik_ccd(target, theta);
+  theta1 = theta[0];
+  theta2 = theta[1];
+  theta3 = theta[2];
+  theta4 = theta[3];
+
+	//////////////////////////////////////////////////////////
+  if (!update.release && ball.position.z > 30) { // release
+    ballP.copy(ball.position);
+    // estimate release velocity
+    ballV.copy(ballP.clone().sub(lastPos).multiplyScalar(1 / dt));
+    update.release = true;
+    tsphere.material.visible = false;
+  } else {
+    lastPos.copy(ball.position);
+  }
+
+  if (update.release) {
+    ballV.add(ballF.clone().multiplyScalar(dt));
+    ballP.add(ballV.clone().multiplyScalar(dt));
+    ball.position.copy(ballP);
+  }
+
+  if (ballP.y < 0) {
+    ballP.y = 0;
+    ballV.setLength(0);
+  }
+
+}
+
+function onWindowResize() {
+  var width = window.innerWidth,
+    height = window.innerHeight;
+  camera.aspect = width / height;
+  camera.updateProjectionMatrix();
+  renderer.setSize(width, height);
+}
+
+
+function render() {
+  upperArm.rotation.z = theta1; //-Math.PI/6;//theta1;
+  upperArm.rotation.x = theta2; //-Math.PI/3;//theta2;
+  upperArm.rotation.y = theta3; //-Math.PI/3;//theta2;
+  upperArm.rotation.order = 'ZXY';
+
+  lowerArm.rotation.x = theta4; //-Math.PI/4;//theta3;
+
+  renderer.render(scene, camera);
+}
+
+</script>
+
+</body>
+</html>
